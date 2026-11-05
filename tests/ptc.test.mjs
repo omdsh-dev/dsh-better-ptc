@@ -1,7 +1,8 @@
 /** Unit tests for the shared runtime exemption registry. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createRuntimeExemption, inject, name } from '../src/index.js'
+import { Context } from '@deepseek-ai/cordis'
+import { BetterPtc, createRuntimeExemption, inject, name } from '../src/index.js'
 
 const delay = ms => new Promise((resolve) => {
   const timer = setTimeout(resolve, ms)
@@ -19,6 +20,7 @@ class FakeRuntime {
     this.lastSpec = spec
     const functions = spec.bindings?.[0]?.functions ?? {}
     const target = spec.program === 'ask_ok' ? 'ask_user_question'
+      : spec.program === 'plan_ok' ? 'exit_plan_mode'
       : spec.program === 'hold_ok' ? 'hold'
         : 'wait_subagent'
 
@@ -52,6 +54,27 @@ const specFor = (program, functions, timeoutMs, signal) => ({
   bindings: [{ global: 'tools', functions }],
   timeoutMs,
   ...signal === undefined ? {} : { signal },
+})
+
+test('BetterPtc owns exit_plan_mode without external registrations and restores on unload', async () => {
+  const ctx = new Context()
+  const Runtime = runtimeClass()
+  const runtime = new Runtime()
+  ctx.provide('ptcRuntime', runtime)
+  const proto = Object.getPrototypeOf(runtime)
+  const original = proto.run
+  new BetterPtc(ctx)
+  try {
+    assert.notEqual(proto.run, original)
+    const result = await runtime.run(specFor('plan_ok', {
+      exit_plan_mode: async () => { await delay(100); return { approved: false } },
+    }, 20))
+    assert.deepEqual(result.value, { approved: false })
+    assert.equal(result.error, undefined)
+  } finally {
+    await ctx.fiber.dispose()
+  }
+  assert.equal(proto.run, original)
 })
 
 test('row contract: name and ptcRuntime injection', () => {

@@ -1,6 +1,7 @@
 # dsh-better-ptc
 
 Shared host service for DeepSeek Harness PTC run_code deadline exemptions.
+Version 0.2.0 targets DSH 0.2.2-rc.1 only, Node >=24.9.0 and Cordis ~4.1.0.
 
 ## What it does
 
@@ -8,6 +9,11 @@ The Node PTC runtime owns the run_code elapsed deadline. This package is a
 singleton host row that patches the mounted runtime prototype's run once and
 exposes ctx.betterPtc.register(toolName). While a registered tool's binding is
 in flight the wall clock pauses; when it returns the remaining budget resumes.
+`exit_plan_mode` is registered by the BetterPtc service itself, even without
+ask-user or subagent plugins. Pending decisions have no deadline and are never
+automatically approved or assigned a default choice. External cancellation and
+service unloading still abort active waits.
+
 Other bindings still consume the program budget. The wrapper reports its own
 expiry as the runtime's normal timeout failure and preserves outer aborts.
 
@@ -42,7 +48,15 @@ npm install
 npm test
 ~~~
 
-The unit tests exercise the pure createRuntimeExemption registry with a fake
-runtime. A live check can mount the real installed NodePtcRuntime and verify
-that both a registered wait and an unregistered normal binding keep their
-expected timeout behavior.
+The unit tests exercise the registry and service lifecycle with a fake runtime.
+The runtime tests mount the actual installed NodePtcRuntime and Cordis plugin,
+launch real Node workers in all four configurations (per-call, persistent REPL,
+and vm-script with/without persistence), and exercise waits, plan decisions,
+remaining budgets, cancellation, unload, owners, release and policy events.
+These binding-level plan tests are not the full plan-mode/userQuestions flow.
+Without DSH_PACKAGE_ROOT the real runtime tests are explicitly skipped.
+
+~~~sh
+DSH_PACKAGE_ROOT=/path/to/host/node_modules/@deepseek-ai/dsh \
+APOLLO_PLUGIN_SOURCE_ROOT=/path/to/plugin-worktrees npm test
+~~~

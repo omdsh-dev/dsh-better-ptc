@@ -56,12 +56,15 @@ function hasExemptBinding(bindings, names) {
  * @param spec - resolved runtime spec with a numeric timeout.
  * @param original - the runtime's unwrapped run method.
  * @param names - live registered tool names.
+ * @param controllers - active runs canceled when the service unloads.
  * @returns the runtime result, with this wrapper's expiry reported as timeout.
  */
-async function runWithPausedDeadline(runtime, spec, original, names) {
+async function runWithPausedDeadline(runtime, spec, original, names, controllers) {
   const controller = new AbortController()
+  controllers.add(controller)
+  let settled = false
   let remaining = spec.timeoutMs
-  let deadlineAt = Date.now() + remaining
+  let deadlineAt = performance.now() + remaining
   let paused = 0
   let expired = false
   let timer
@@ -72,12 +75,12 @@ async function runWithPausedDeadline(runtime, spec, original, names) {
     controller.abort('execution deadline reached')
   }
   const arm = (ms) => {
-    deadlineAt = Date.now() + ms
+    deadlineAt = performance.now() + ms
     timer = setTimeout(fire, ms)
   }
   const pause = () => {
     if (paused === 0) {
-      remaining = Math.max(0, deadlineAt - Date.now())
+      remaining = Math.max(0, deadlineAt - performance.now())
       clearTimeout(timer)
       timer = undefined
     }
@@ -86,7 +89,7 @@ async function runWithPausedDeadline(runtime, spec, original, names) {
   const resume = () => {
     if (paused === 0) return
     paused -= 1
-    if (paused > 0 || expired) return
+    if (paused > 0 || expired || settled || signal.aborted) return
     if (remaining <= 0) fire()
     else arm(remaining)
   }
@@ -101,11 +104,15 @@ async function runWithPausedDeadline(runtime, spec, original, names) {
   try {
     const result = await original.call(runtime, { ...spec, bindings, timeoutMs: null, signal })
     if (expired && spec.signal?.aborted !== true && result?.error?.kind === 'abort') {
-      return { ...result, error: { kind: 'timeout', message: deadlineMessage(spec.timeoutMs) } }
+      const cleared = result.error.message.endsWith('; retained variables were cleared')
+        ? '; retained variables were cleared' : ''
+      return { ...result, error: { ...result.error, kind: 'timeout', message: deadlineMessage(spec.timeoutMs) + cleared } }
     }
     return result
   } finally {
+    settled = true
     clearTimeout(timer)
+    controllers.delete(controller)
   }
 }
 
@@ -117,6 +124,7 @@ async function runWithPausedDeadline(runtime, spec, original, names) {
  */
 export function createRuntimeExemption(runtime) {
   const names = new Map()
+  const controllers = new Set()
   let original
   let wrapped
   let proto
@@ -134,7 +142,7 @@ export function createRuntimeExemption(runtime) {
       if (spec?.timeoutMs === null || typeof spec?.timeoutMs !== 'number' || !hasExemptBinding(spec?.bindings, names)) {
         return original.call(this, spec)
       }
-      return runWithPausedDeadline(this, spec, original, names)
+      return runWithPausedDeadline(this, spec, original, names, controllers)
     }
     proto.run = wrapped
     installed = true
@@ -169,6 +177,7 @@ export function createRuntimeExemption(runtime) {
   }
 
   const dispose = () => {
+    for (const controller of controllers) controller.abort('betterPtc disposed')
     names.clear()
     restore()
   }
@@ -181,6 +190,7 @@ export class BetterPtc extends Service {
   constructor(ctx) {
     super(ctx, 'betterPtc')
     this.exemption = createRuntimeExemption(ctx.ptcRuntime)
+    this.exemption.register('exit_plan_mode')
     ctx.effect(() => () => { this.exemption.dispose() }, 'dsh-better-ptc: runtime exemption')
   }
 

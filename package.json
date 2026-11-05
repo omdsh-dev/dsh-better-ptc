@@ -1,6 +1,6 @@
 {
   "name": "dsh-better-ptc",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Shared host service that exempts blocking tools from the PTC run_code elapsed deadline.",
   "license": "Apache-2.0",
   "repository": {
@@ -14,8 +14,8 @@
     "./package.json": "./package.json"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2 <0.3.0"
+    "node": ">=24.9.0",
+    "dsh": "0.2.2-rc.1"
   },
   "scripts": {
     "test": "node --test"
@@ -27,10 +27,10 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5"
+    "@deepseek-ai/cordis": "~4.1.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/cordis": "~4.1.0",
     "js-yaml": "^4.2.0"
   },
   "dsh": {
