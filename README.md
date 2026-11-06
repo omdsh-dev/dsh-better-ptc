@@ -1,62 +1,88 @@
-# dsh-better-ptc
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/omdsh-dev/dsh-better-ptc/main/docs/assets/banner-dark.svg">
+    <img src="https://raw.githubusercontent.com/omdsh-dev/dsh-better-ptc/main/docs/assets/banner-light.svg" width="100%" alt="Part of Better DSH — dsh-better-ptc">
+  </picture>
+</p>
 
-Shared host service for DeepSeek Harness PTC run_code deadline exemptions.
-Version 0.2.0 targets DSH 0.2.2-rc.1 only, Node >=24.9.0 and Cordis ~4.1.0.
+<h1 align="center">dsh-better-ptc</h1>
 
-## What it does
+<p align="center">一个共享的 PTC deadline 豁免单例，让等待工具不消耗 run_code 的 elapsed budget。</p>
 
-The Node PTC runtime owns the run_code elapsed deadline. This package is a
-singleton host row that patches the mounted runtime prototype's run once and
-exposes ctx.betterPtc.register(toolName). While a registered tool's binding is
-in flight the wall clock pauses; when it returns the remaining budget resumes.
-`exit_plan_mode` is registered by the BetterPtc service itself, even without
-ask-user or subagent plugins. Pending decisions have no deadline and are never
-automatically approved or assigned a default choice. External cancellation and
-service unloading still abort active waits.
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-better-ptc"><img src="https://img.shields.io/npm/v/dsh-better-ptc.svg" alt="npm 版本"></a>
+  <a href="LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/github/license/omdsh-dev/dsh-better-ptc?color=blue"></a>
+  <a href="package.json"><img alt="DSH 0.2.2-rc.1" src="https://img.shields.io/badge/DSH-0.2.2--rc.1-4B32C3"></a>
+  <a href="https://github.com/omdsh-dev/dsh-better-dsh"><img alt="Part of Better DSH" src="https://img.shields.io/badge/part%20of-dsh--better--dsh-2F80B7"></a>
+</p>
 
-Other bindings still consume the program budget. The wrapper reports its own
-expiry as the runtime's normal timeout failure and preserves outer aborts.
+<p align="center">
+  <a href="https://github.com/omdsh-dev/dsh-better-dsh">Better DSH 插件集合</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#它拥有什么">它拥有什么</a> ·
+  <a href="#设置">设置</a> ·
+  <a href="#与-better-dsh-的关系">与 Better DSH 的关系</a>
+</p>
 
-## Stable row
+## 它做什么
 
-The row id and name are both dsh-better-ptc. Every plugin that needs an
-exemption inserts the same row in its bundle patch; the DSH Loader deduplicates
-by row id, so installing several plugins (or the shared bundle itself) still
-activates exactly one row and one service. Plugins call the service through
-ctx.inject(['betterPtc'], ...); they do not import private copies.
+- 共享的 PTC 豁免服务
+- 覆盖 `wait_subagent` / `ask_user_question`
+- 注册 `exit_plan_mode` 的无限期等待
+- ask-user 与 subagent 共用同一实例
 
-## API
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/omdsh-dev/dsh-better-ptc/main/docs/assets/ownership-dark.svg">
+    <img src="https://raw.githubusercontent.com/omdsh-dev/dsh-better-ptc/main/docs/assets/ownership-light.svg" width="100%" alt="dsh-better-ptc 与 Better DSH 的装配关系">
+  </picture>
+</p>
 
-ctx.betterPtc.register(toolName) returns an idempotent unregister disposer.
-The call is refcounted per tool name. If the mounted runtime has no numeric
-timeout (for example the experimental Python provider), registration is a
-no-op. The service never edits DSH core.
+## 安装
 
-## Install
+```sh
+# 只安装这个插件
+dsh plugin --profile <profile> add dsh-better-ptc@0.2.0
 
-The package is a host-only bundle. Install it directly to mount the service, or
-let a plugin's bundle patch insert the stable row:
+# 或安装 Better DSH（会自动带上所有独立插件）
+dsh plugin --profile <profile> add dsh-better-dsh@0.10.0
+```
 
-~~~sh
-dsh plugin --profile <profile> add dsh-better-ptc
-~~~
+> 安装 / 升级 / 换包后必须重启对应 profile；只刷新网页不够。
 
-## Development
+## 它拥有什么
 
-~~~sh
-npm install
-npm test
-~~~
+| | |
+|---|---|
+| 稳定行 id | `dsh-better-ptc` |
+| 入口 / 工具 | PTC 豁免服务 · `exit_plan_mode` 等待 · 无设置页 |
+| 设置 | 无设置页；单例服务 |
+| npm 包 | `dsh-better-ptc@0.2.0` |
+| 仓库 | https://github.com/omdsh-dev/dsh-better-ptc |
 
-The unit tests exercise the registry and service lifecycle with a fake runtime.
-The runtime tests mount the actual installed NodePtcRuntime and Cordis plugin,
-launch real Node workers in all four configurations (per-call, persistent REPL,
-and vm-script with/without persistence), and exercise waits, plan decisions,
-remaining budgets, cancellation, unload, owners, release and policy events.
-These binding-level plan tests are not the full plan-mode/userQuestions flow.
-Without DSH_PACKAGE_ROOT the real runtime tests are explicitly skipped.
+## 设置
 
-~~~sh
-DSH_PACKAGE_ROOT=/path/to/host/node_modules/@deepseek-ai/dsh \
-APOLLO_PLUGIN_SOURCE_ROOT=/path/to/plugin-worktrees npm test
-~~~
+Better PTC 没有设置页；它是一个共享单例服务。
+
+- ask-user 与 subagent 注册到同一服务；重复插入同一行 id 只激活一份。
+- 计划审批无限期等待、不自动批准；外层取消、会话中断和卸载仍然有效。
+
+## 与 Better DSH 的关系
+
+- **同一个稳定行**：独立安装或由 `dsh-better-dsh` 装配，行 id 和设置命名空间都不变。
+- **旧入口兼容**：早期 Apollo 集成使用的行配置键仍然注册，指向同一份配置。
+- **可以单独使用**：不安装 Better DSH 也能工作；只是不会得到工程预设、流程技能或后台 job 守卫。
+- **Apache-2.0**：本仓库与 Better DSH 的其他仓库统一使用 Apache License 2.0。
+
+## 开发
+
+```sh
+npm test        # 单元 / 组件测试
+npm run smoke   # 如仓库提供运行时冒烟
+```
+
+实现与测试说明见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+## 许可
+
+[Apache License 2.0](LICENSE)。

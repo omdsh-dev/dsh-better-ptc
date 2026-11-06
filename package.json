@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Menghuan1918/dsh-better-ptc.git"
+    "url": "git+https://github.com/omdsh-dev/dsh-better-ptc.git"
   },
   "type": "module",
   "main": "src/index.js",
@@ -37,5 +37,13 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "homepage": "https://github.com/omdsh-dev/dsh-better-ptc#readme",
+  "bugs": {
+    "url": "https://github.com/omdsh-dev/dsh-better-ptc/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   }
 }
