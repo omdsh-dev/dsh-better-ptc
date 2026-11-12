@@ -1,7 +1,7 @@
 # dsh-better-ptc
 
 Shared host service for DeepSeek Harness PTC run_code deadline exemptions.
-Version 0.2.0 targets DSH 0.2.2-rc.1 only, Node >=24.9.0 and Cordis ~4.1.0.
+Version 0.2.1 targets DSH 0.2.2-rc.2 only, Node >=24.9.0 and Cordis ~4.1.0.
 
 ## What it does
 
