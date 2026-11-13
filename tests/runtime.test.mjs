@@ -16,7 +16,7 @@ for (const config of [
   { executionMode: 'vm-script', scriptPersistence: true },
 ]) test('installed Node runtime ' + JSON.stringify(config), { timeout: 45000, skip: !hostRoot && 'Set DSH_PACKAGE_ROOT to the installed @deepseek-ai/dsh package' }, async (t) => {
   const requireHost = createRequire(join(hostRoot, 'package.json'))
-  assert.equal(requireHost(join(hostRoot, 'package.json')).version, '0.2.2-rc.1')
+  assert.equal(requireHost(join(hostRoot, 'package.json')).version, '0.2.2-rc.2')
   const load = name => import(pathToFileURL(requireHost.resolve('@deepseek-ai/' + name)))
   const { Context } = await load('cordis')
   const { default: LocalFileSystem } = await load('dsh-fs-local')
@@ -166,7 +166,9 @@ for (const config of [
     const run = await fixture(t)
     const functions = { wait_subagent: async () => 'unused' }
     await run('globalThis.policyValue = 1; return 1', functions)
-    const changed = { sandboxPolicy: { mode: 'danger-full-access', workspaceRoot: process.cwd(), additionalWritableRoots: [process.cwd()] } }
+    // rc.2 keeps launch-time additional roots without rejecting, so exercise a
+    // real policy change (workspace root) instead.
+    const changed = { sandboxPolicy: { mode: 'danger-full-access', workspaceRoot: join(process.cwd(), 'policy-change') } }
     if (run.runtime.retainsState) {
       await assert.rejects(run('return 42', functions, 400, undefined, changed), /release.*before changing its sandbox policy/)
       assert.equal((await run('return globalThis.policyValue', functions)).value, 1)
@@ -298,7 +300,7 @@ for (const config of [
     try {
       const result = await pending
       assert.equal(result.error?.kind, 'abort')
-      assert.equal(result.error.message, run.runtime.retainsState ? 'execution canceled; retained variables were cleared' : 'user stop')
+      assert.equal(result.error.message, run.runtime.retainsState ? 'execution canceled; retained variables were preserved' : 'user stop')
     } finally {
       finish.resolve('released')
     }
