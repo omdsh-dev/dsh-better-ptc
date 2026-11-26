@@ -12,24 +12,61 @@
  * the service through Cordis; they never import separate copies that could
  * double-wrap the runtime.
  */
-import { Service } from '@deepseek-ai/cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 
 export const name = 'dsh-better-ptc'
 
 /** The mounted Node PTC runtime this service wraps. */
 export const inject = ['ptcRuntime']
 
+/** One binding namespace exposed by the PTC runtime. */
+export interface RuntimeBindingNamespace {
+  functions?: Record<string, (...args: unknown[]) => unknown>
+  [key: string]: unknown
+}
+
+/** The subset of the PTC runtime spec this service reads or rewrites. */
+export interface RuntimeSpec {
+  timeoutMs?: number | null
+  signal?: AbortSignal
+  bindings: RuntimeBindingNamespace[]
+  [key: string]: unknown
+}
+
+/** The subset of a runtime result this service rewrites on deadline expiry. */
+export interface RuntimeResult {
+  error?: { kind: string; message: string; [key: string]: unknown }
+  [key: string]: unknown
+}
+
+/** Structural view of the mounted PTC runtime (the host ships no public type). */
+export interface PtcRuntimeLike {
+  timeout?: unknown
+  run(this: PtcRuntimeLike, spec: RuntimeSpec): Promise<RuntimeResult>
+}
+
+/** Public exemption registry returned by createRuntimeExemption. */
+export interface RuntimeExemption {
+  register(toolName: string): () => void
+  dispose(): void
+}
+
 /** Render the runtime's own timeout message so caller-visible text is unchanged. */
-function deadlineMessage(timeoutMs) {
+function deadlineMessage(timeoutMs: number): string {
   return 'execution deadline reached (' + timeoutMs + 'ms)'
 }
 
 /** Copy one binding namespace, pausing the deadline around registered tools. */
-function wrapNamespace(namespace, names, pause, resume) {
-  const functions = Object.create(null)
+function wrapNamespace(
+  namespace: RuntimeBindingNamespace,
+  names: ReadonlyMap<string, number>,
+  pause: () => void,
+  resume: () => void,
+): RuntimeBindingNamespace {
+  const functions: Record<string, (...args: unknown[]) => unknown> = Object.create(null)
   for (const [toolName, fn] of Object.entries(namespace.functions ?? {})) {
     functions[toolName] = names.has(toolName)
-      ? async (args) => {
+      ? async (args: unknown) => {
           pause()
           try { return await fn(args) } finally { resume() }
         }
@@ -39,7 +76,7 @@ function wrapNamespace(namespace, names, pause, resume) {
 }
 
 /** Whether any visible binding carries a currently registered tool name. */
-function hasExemptBinding(bindings, names) {
+function hasExemptBinding(bindings: RuntimeBindingNamespace[] | undefined, names: ReadonlyMap<string, number>): boolean {
   if (!Array.isArray(bindings) || names.size === 0) return false
   for (const namespace of bindings) {
     for (const toolName of Object.keys(namespace?.functions ?? {})) {
@@ -59,26 +96,32 @@ function hasExemptBinding(bindings, names) {
  * @param controllers - active runs canceled when the service unloads.
  * @returns the runtime result, with this wrapper's expiry reported as timeout.
  */
-async function runWithPausedDeadline(runtime, spec, original, names, controllers) {
+async function runWithPausedDeadline(
+  runtime: PtcRuntimeLike,
+  spec: RuntimeSpec,
+  original: PtcRuntimeLike['run'],
+  names: ReadonlyMap<string, number>,
+  controllers: Set<AbortController>,
+): Promise<RuntimeResult> {
   const controller = new AbortController()
   controllers.add(controller)
   let settled = false
-  let remaining = spec.timeoutMs
+  let remaining = spec.timeoutMs as number
   let deadlineAt = performance.now() + remaining
   let paused = 0
   let expired = false
-  let timer
+  let timer: ReturnType<typeof setTimeout> | undefined
 
-  const fire = () => {
+  const fire = (): void => {
     if (expired) return
     expired = true
     controller.abort('execution deadline reached')
   }
-  const arm = (ms) => {
+  const arm = (ms: number): void => {
     deadlineAt = performance.now() + ms
     timer = setTimeout(fire, ms)
   }
-  const pause = () => {
+  const pause = (): void => {
     if (paused === 0) {
       remaining = Math.max(0, deadlineAt - performance.now())
       clearTimeout(timer)
@@ -86,7 +129,7 @@ async function runWithPausedDeadline(runtime, spec, original, names, controllers
     }
     paused += 1
   }
-  const resume = () => {
+  const resume = (): void => {
     if (paused === 0) return
     paused -= 1
     if (paused > 0 || expired || settled || signal.aborted) return
@@ -106,7 +149,7 @@ async function runWithPausedDeadline(runtime, spec, original, names, controllers
     if (expired && spec.signal?.aborted !== true && result?.error?.kind === 'abort') {
       const cleared = result.error.message.endsWith('; retained variables were cleared')
         ? '; retained variables were cleared' : ''
-      return { ...result, error: { ...result.error, kind: 'timeout', message: deadlineMessage(spec.timeoutMs) + cleared } }
+      return { ...result, error: { ...result.error, kind: 'timeout', message: deadlineMessage(spec.timeoutMs as number) + cleared } }
     }
     return result
   } finally {
@@ -122,41 +165,41 @@ async function runWithPausedDeadline(runtime, spec, original, names, controllers
  * @param runtime - mounted PTC runtime.
  * @returns an object with register and dispose.
  */
-export function createRuntimeExemption(runtime) {
-  const names = new Map()
-  const controllers = new Set()
-  let original
-  let wrapped
-  let proto
+export function createRuntimeExemption(runtime: PtcRuntimeLike | undefined): RuntimeExemption {
+  const names = new Map<string, number>()
+  const controllers = new Set<AbortController>()
+  let original: PtcRuntimeLike['run'] | undefined
+  let wrapped: PtcRuntimeLike['run'] | undefined
+  let proto: PtcRuntimeLike | undefined
   let installed = false
 
   let supported = false
   try { supported = runtime?.timeout !== undefined } catch { supported = false }
 
-  const ensureInstalled = () => {
-    if (!supported || installed) return
-    proto = Object.getPrototypeOf(runtime)
+  const ensureInstalled = (): void => {
+    if (!supported || installed || runtime === undefined) return
+    proto = Object.getPrototypeOf(runtime) as PtcRuntimeLike
     if (typeof proto?.run !== 'function') return
     original = proto.run
-    wrapped = function betterPtcRun(spec) {
+    wrapped = function betterPtcRun(this: PtcRuntimeLike, spec: RuntimeSpec): Promise<RuntimeResult> {
       if (spec?.timeoutMs === null || typeof spec?.timeoutMs !== 'number' || !hasExemptBinding(spec?.bindings, names)) {
-        return original.call(this, spec)
+        return original!.call(this, spec)
       }
-      return runWithPausedDeadline(this, spec, original, names, controllers)
+      return runWithPausedDeadline(this, spec, original!, names, controllers)
     }
     proto.run = wrapped
     installed = true
   }
 
-  const restore = () => {
-    if (!installed) return
-    if (proto.run === wrapped) proto.run = original
+  const restore = (): void => {
+    if (!installed || proto === undefined) return
+    if (proto.run === wrapped) proto.run = original!
     installed = false
     original = undefined
     wrapped = undefined
   }
 
-  const register = (toolName) => {
+  const register = (toolName: string): (() => void) => {
     if (typeof toolName !== 'string' || toolName.length === 0) {
       throw new TypeError('betterPtc.register requires a non-empty tool name')
     }
@@ -176,7 +219,7 @@ export function createRuntimeExemption(runtime) {
     }
   }
 
-  const dispose = () => {
+  const dispose = (): void => {
     for (const controller of controllers) controller.abort('betterPtc disposed')
     names.clear()
     restore()
@@ -187,7 +230,9 @@ export function createRuntimeExemption(runtime) {
 
 /** ctx.betterPtc: one exemption registry per profile. */
 export class BetterPtc extends Service {
-  constructor(ctx) {
+  declare exemption: RuntimeExemption
+
+  constructor(ctx: Context) {
     super(ctx, 'betterPtc')
     this.exemption = createRuntimeExemption(ctx.ptcRuntime)
     this.exemption.register('exit_plan_mode')
@@ -199,12 +244,21 @@ export class BetterPtc extends Service {
    * @param toolName - exact binding/tool name.
    * @returns idempotent unregister disposer.
    */
-  register(toolName) {
+  register(toolName: string): () => void {
     return this.exemption.register(toolName)
   }
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Mounted PTC runtime, supplied by the host PTC row. */
+    ptcRuntime: PtcRuntimeLike
+    /** This bundle's singleton deadline exemption service. */
+    betterPtc: BetterPtc
+  }
+}
+
 /** Register the singleton service row. */
-export function apply(ctx) {
+export function apply(ctx: Context): void {
   ctx.plugin(BetterPtc)
 }

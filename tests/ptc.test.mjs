@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
-import { BetterPtc, createRuntimeExemption, inject, name } from '../src/index.js'
+import { BetterPtc, createRuntimeExemption, inject, name } from '../lib/index.js'
 
 const delay = ms => new Promise((resolve) => {
   const timer = setTimeout(resolve, ms)

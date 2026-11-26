@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { BetterPtc } from '../src/index.js'
+import { BetterPtc } from '../lib/index.js'
 
 const hostRoot = process.env.DSH_PACKAGE_ROOT
 
@@ -16,7 +16,7 @@ for (const config of [
   { executionMode: 'vm-script', scriptPersistence: true },
 ]) test('installed Node runtime ' + JSON.stringify(config), { timeout: 45000, skip: !hostRoot && 'Set DSH_PACKAGE_ROOT to the installed @deepseek-ai/dsh package' }, async (t) => {
   const requireHost = createRequire(join(hostRoot, 'package.json'))
-  assert.equal(requireHost(join(hostRoot, 'package.json')).version, '0.2.2-rc.3')
+  assert.equal(requireHost(join(hostRoot, 'package.json')).version, '0.2.3-alpha.2')
   const load = name => import(pathToFileURL(requireHost.resolve('@deepseek-ai/' + name)))
   const { Context } = await load('cordis')
   const { default: LocalFileSystem } = await load('dsh-fs-local')
@@ -91,7 +91,7 @@ for (const config of [
       wait_subagent: async () => { await delay(650); throw new Error('decision failed') },
     })
     assert.equal(result.error?.kind, 'timeout')
-    assert.ok(result.logs.some(line => line.includes('decision failed')))
+    assert.ok(result.output.some(entry => entry.type === 'text' && entry.text.includes('decision failed')))
   })
 
   await t.test('a runtime exception after a wait remains a runtime failure', async (t) => {
