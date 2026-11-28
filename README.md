@@ -42,7 +42,7 @@
 
 ```sh
 # 只安装这个插件
-dsh plugin --profile <profile> add dsh-better-ptc@0.2.3-alpha.1
+dsh plugin --profile <profile> add dsh-better-ptc@0.2.4-alpha.1
 
 # 或安装 Better DSH（会自动带上所有独立插件）
 dsh plugin --profile <profile> add dsh-better-dsh@0.11.7
@@ -57,7 +57,7 @@ dsh plugin --profile <profile> add dsh-better-dsh@0.11.7
 | 稳定行 id | `dsh-better-ptc` |
 | 入口 / 工具 | PTC 豁免服务 · `exit_plan_mode` 等待 · 无设置页 |
 | 设置 | 无设置页；单例服务 |
-| npm 包 | `dsh-better-ptc@0.2.3-alpha.1` |
+| npm 包 | `dsh-better-ptc@0.2.4-alpha.1` |
 | 仓库 | https://github.com/omdsh-dev/dsh-better-ptc |
 
 ## 设置

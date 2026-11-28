@@ -16,7 +16,7 @@ for (const config of [
   { executionMode: 'vm-script', scriptPersistence: true },
 ]) test('installed Node runtime ' + JSON.stringify(config), { timeout: 45000, skip: !hostRoot && 'Set DSH_PACKAGE_ROOT to the installed @deepseek-ai/dsh package' }, async (t) => {
   const requireHost = createRequire(join(hostRoot, 'package.json'))
-  assert.equal(requireHost(join(hostRoot, 'package.json')).version, '0.2.3-alpha.2')
+  assert.equal(requireHost(join(hostRoot, 'package.json')).version, '0.2.3-alpha.3')
   const load = name => import(pathToFileURL(requireHost.resolve('@deepseek-ai/' + name)))
   const { Context } = await load('cordis')
   const { default: LocalFileSystem } = await load('dsh-fs-local')
